@@ -8,6 +8,7 @@ import {
 } from 'notion-utils'
 import { type FetchOptions as OfetchOptions, ofetch } from 'ofetch'
 import pMap from 'p-map'
+import { ProxyAgent } from 'undici'
 
 import type * as types from './types'
 
@@ -29,13 +30,15 @@ export class NotionAPI {
    * @param options.activeUser - The active user for the Notion API. Defaults to undefined.
    * @param options.userTimeZone - The time zone for the Notion API. Defaults to `America/New_York`.
    * @param options.ofetchOptions - The HTTP options to use for the underlying `ofetch` requests. Defaults to undefined.
+   * @param options.proxyUrl - Optional HTTP proxy URL. When provided, all API requests are routed through this proxy.
    */
   constructor({
     apiBaseUrl = 'https://www.notion.so/api/v3',
     authToken,
     activeUser,
     userTimeZone = 'America/New_York',
-    ofetchOptions
+    ofetchOptions,
+    proxyUrl
   }: {
     apiBaseUrl?: string
     authToken?: string
@@ -43,12 +46,22 @@ export class NotionAPI {
     userTimeZone?: string
     activeUser?: string
     ofetchOptions?: OfetchOptions
+    proxyUrl?: string
   } = {}) {
     this._apiBaseUrl = apiBaseUrl
     this._authToken = authToken
     this._activeUser = activeUser
     this._userTimeZone = userTimeZone
-    this._ofetchOptions = ofetchOptions
+
+    if (proxyUrl) {
+      const proxyAgent = new ProxyAgent(proxyUrl)
+      this._ofetchOptions = {
+        ...ofetchOptions,
+        dispatcher: proxyAgent
+      } as OfetchOptions
+    } else {
+      this._ofetchOptions = ofetchOptions
+    }
   }
 
   /**
@@ -838,30 +851,34 @@ export class NotionAPI {
 
     const url = `${apiBaseUrl}/${endpoint}`
 
-    /*     const res = await ky.post(url, {
-      mode: 'no-cors',
-      ...this._ofetchOptions,
-      ...ofetchOptions,
-      json: body,
-      headers
-    }) */
+    const MaxRetries = 3
 
-    // TODO: we're awaiting the first fetch and then separately awaiting
-    // `res.json()` because there seems to be some weird error which repros
-    // sporadically when loading collections where the body is already used.
-    // No idea why, but from my testing, separating these into two separate
-    // steps seems to fix the issue locally for me...
-    // console.log(endpoint, { bodyUsed: res.bodyUsed })
+    for (let attempt = 0; attempt <= MaxRetries; attempt++) {
+      try {
+        const res = await ofetch(url, {
+          method,
+          mode: 'no-cors',
+          ...this._ofetchOptions,
+          ...ofetchOptions,
+          body,
+          headers
+        })
+        return res
+      } catch (err: any) {
+        const status = err?.response?.status ?? err?.status ?? err?.statusCode
+        if (status === 429 && attempt < MaxRetries) {
+          const backoffMs = 2000 * 2 ** attempt // 2s, 4s, 8s
+          console.warn(
+            `NotionAPI 429 rate-limited on ${endpoint}, retrying in ${backoffMs}ms (attempt ${attempt + 1}/${MaxRetries})`
+          )
+          await new Promise((resolve) => setTimeout(resolve, backoffMs))
+          continue
+        }
+        throw err
+      }
+    }
 
-    /* return res.json<T>() */
-    const res = ofetch(url, {
-      method,
-      mode: 'no-cors',
-      ...this._ofetchOptions,
-      ...ofetchOptions,
-      body,
-      headers
-    })
-    return res
+    // Should be unreachable, but satisfies TypeScript
+    throw new Error(`NotionAPI fetch failed after ${MaxRetries} retries`)
   }
 }
