@@ -25,7 +25,8 @@ export class NotionAPI {
   private readonly _authToken?: string
   private readonly _activeUser?: string
   private readonly _userTimeZone: string
-  private readonly _ofetchOptions?: OfetchOptions
+  private readonly _baseOfetchOptions?: OfetchOptions
+  private readonly _getProxyUrl?: () => string
   private readonly _logger?: NotionAPILogger
 
   /**
@@ -36,7 +37,7 @@ export class NotionAPI {
    * @param options.activeUser - The active user for the Notion API. Defaults to undefined.
    * @param options.userTimeZone - The time zone for the Notion API. Defaults to `America/New_York`.
    * @param options.ofetchOptions - The HTTP options to use for the underlying `ofetch` requests. Defaults to undefined.
-   * @param options.proxyUrl - Optional HTTP proxy URL. When provided, all API requests are routed through this proxy.
+   * @param options.proxyUrl - Optional HTTP proxy URL or function returning one. Functions are called on each request, enabling proxy rotation on retries.
    * @param options.logger - Optional logger. When provided, retry events and other diagnostics are logged through it instead of being silent.
    */
   constructor({
@@ -54,7 +55,7 @@ export class NotionAPI {
     userTimeZone?: string
     activeUser?: string
     ofetchOptions?: OfetchOptions
-    proxyUrl?: string
+    proxyUrl?: string | (() => string)
     logger?: NotionAPILogger
   } = {}) {
     this._apiBaseUrl = apiBaseUrl
@@ -62,16 +63,28 @@ export class NotionAPI {
     this._activeUser = activeUser
     this._userTimeZone = userTimeZone
     this._logger = logger
+    this._baseOfetchOptions = ofetchOptions
 
-    if (proxyUrl) {
+    if (typeof proxyUrl === 'function') {
+      this._getProxyUrl = proxyUrl
+    } else if (proxyUrl) {
       const proxyAgent = new ProxyAgent(proxyUrl)
-      this._ofetchOptions = {
+      this._baseOfetchOptions = {
         ...ofetchOptions,
         dispatcher: proxyAgent
       } as OfetchOptions
-    } else {
-      this._ofetchOptions = ofetchOptions
     }
+  }
+
+  private _getOfetchOptions(): OfetchOptions | undefined {
+    if (this._getProxyUrl) {
+      const proxyAgent = new ProxyAgent(this._getProxyUrl())
+      return {
+        ...this._baseOfetchOptions,
+        dispatcher: proxyAgent
+      } as OfetchOptions
+    }
+    return this._baseOfetchOptions
   }
 
   /**
@@ -839,7 +852,7 @@ export class NotionAPI {
   }): Promise<T> {
     const headers: any = {
       ...clientHeaders,
-      ...this._ofetchOptions?.headers,
+      ...this._getOfetchOptions()?.headers,
       ...ofetchOptions?.headers,
       'Content-Type': 'application/json'
     }
@@ -861,7 +874,7 @@ export class NotionAPI {
         const res = await ofetch(url, {
           method,
           mode: 'no-cors',
-          ...this._ofetchOptions,
+          ...this._getOfetchOptions(),
           ...ofetchOptions,
           body,
           headers
