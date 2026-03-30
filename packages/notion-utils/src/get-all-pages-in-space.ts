@@ -20,6 +20,7 @@ import { parsePageId } from './parse-page-id'
  */
 export interface PageSpaceLogger {
   warn: (message: string, extra?: Record<string, unknown>) => void
+  debug?: (message: string, extra?: Record<string, unknown>) => void
 }
 
 export async function getAllPagesInSpace(
@@ -133,6 +134,9 @@ export async function getAllPagesInSpace(
           }
 
           pages[pageId] = page
+          logger?.debug?.(`Fetched page ${Object.keys(pages).length}`, {
+            pageId
+          })
         } catch (err: any) {
           logger?.warn('page load error', {
             pageId,
