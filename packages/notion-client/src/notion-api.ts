@@ -15,12 +15,18 @@ import type * as types from './types'
 /**
  * Main Notion API client.
  */
+export interface NotionAPILogger {
+  warn: (message: string, extra?: Record<string, unknown>) => void
+  debug?: (message: string, extra?: Record<string, unknown>) => void
+}
+
 export class NotionAPI {
   private readonly _apiBaseUrl: string
   private readonly _authToken?: string
   private readonly _activeUser?: string
   private readonly _userTimeZone: string
   private readonly _ofetchOptions?: OfetchOptions
+  private readonly _logger?: NotionAPILogger
 
   /**
    * Constructor for the NotionAPI class.
@@ -31,6 +37,7 @@ export class NotionAPI {
    * @param options.userTimeZone - The time zone for the Notion API. Defaults to `America/New_York`.
    * @param options.ofetchOptions - The HTTP options to use for the underlying `ofetch` requests. Defaults to undefined.
    * @param options.proxyUrl - Optional HTTP proxy URL. When provided, all API requests are routed through this proxy.
+   * @param options.logger - Optional logger. When provided, retry events and other diagnostics are logged through it instead of being silent.
    */
   constructor({
     apiBaseUrl = 'https://www.notion.so/api/v3',
@@ -38,7 +45,8 @@ export class NotionAPI {
     activeUser,
     userTimeZone = 'America/New_York',
     ofetchOptions,
-    proxyUrl
+    proxyUrl,
+    logger
   }: {
     apiBaseUrl?: string
     authToken?: string
@@ -47,11 +55,13 @@ export class NotionAPI {
     activeUser?: string
     ofetchOptions?: OfetchOptions
     proxyUrl?: string
+    logger?: NotionAPILogger
   } = {}) {
     this._apiBaseUrl = apiBaseUrl
     this._authToken = authToken
     this._activeUser = activeUser
     this._userTimeZone = userTimeZone
+    this._logger = logger
 
     if (proxyUrl) {
       const proxyAgent = new ProxyAgent(proxyUrl)
@@ -236,22 +246,15 @@ export class NotionAPI {
             // It's possible for public pages to link to private collections,
             // in which case Notion returns a 400 error. This may be that or it
             // may be something else.
-            console.warn(
-              'NotionAPI collectionQuery error',
-              { pageId, collectionId, collectionViewId },
-              err.message
-            )
+            this._logger?.warn('collectionQuery error', {
+              pageId,
+              collectionId,
+              collectionViewId,
+              error: err.message
+            })
 
             if (throwOnCollectionErrors) {
               throw err
-              // throw new Error(
-              //   `NotionAPI error fetching collectionQuery for page "${pageId}" collection "${collectionId}" view "${collectionViewId}": ${err.message}`,
-              //   {
-              //     cause: err
-              //   }
-              // )
-            } else {
-              console.error(err)
             }
           }
         },
@@ -341,11 +344,9 @@ export class NotionAPI {
         ).then((res) => res.recordMap.block)
         recordMap.block = { ...recordMap.block, ...newBlocks }
       } catch (err: any) {
-        console.warn(
-          'NotionAPI getBlocks error during fetchRelationPages:',
-          err
-        )
-        // consider break or delay/retry here
+        this._logger?.warn('getBlocks error during fetchRelationPages', {
+          error: err.message
+        })
       }
     }
 
@@ -461,7 +462,9 @@ export class NotionAPI {
           }
         }
       } catch (err) {
-        console.warn('NotionAPI getSignedfileUrls error', err)
+        this._logger?.warn('getSignedFileUrls error', {
+          error: (err as Error).message
+        })
       }
     }
   }
@@ -868,9 +871,12 @@ export class NotionAPI {
         const status = err?.response?.status ?? err?.status ?? err?.statusCode
         if (status === 429 && attempt < MaxRetries) {
           const backoffMs = 2000 * 2 ** attempt // 2s, 4s, 8s
-          console.warn(
-            `NotionAPI 429 rate-limited on ${endpoint}, retrying in ${backoffMs}ms (attempt ${attempt + 1}/${MaxRetries})`
-          )
+          this._logger?.warn('429 rate-limited, retrying', {
+            endpoint,
+            attempt: attempt + 1,
+            maxRetries: MaxRetries,
+            backoffMs
+          })
           await new Promise((resolve) => setTimeout(resolve, backoffMs))
           continue
         }

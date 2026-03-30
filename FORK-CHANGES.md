@@ -4,13 +4,19 @@
 
 **File:** `packages/notion-client/src/notion-api.ts`
 
-Added support for routing all Notion API requests through an HTTP proxy. The `NotionAPI` constructor accepts a proxy URL, which is used for API calls while leaving CDN/file downloads unaffected.
+Added a `proxyUrl` option to the `NotionAPI` constructor. When provided, all API requests are routed through the proxy via undici's `ProxyAgent`. CDN/file downloads are unaffected.
 
 ## 2. Retry with Exponential Backoff on 429
 
 **File:** `packages/notion-client/src/notion-api.ts`
 
-Added built-in retry logic for 429 (Too Many Requests) responses with exponential backoff. Previously, 429s were unhandled and resulted in failed/null pages.
+The `fetch()` method now retries up to 3 times on 429 responses with exponential backoff (2s, 4s, 8s). Previously, 429s were unhandled and resulted in failed/null pages.
+
+## 3. Optional Logger
+
+**File:** `packages/notion-client/src/notion-api.ts`
+
+Added an optional `logger` option (`NotionAPILogger` interface) to the constructor. Retry events and diagnostics are logged through it when provided, otherwise silent. No `console.*` calls added.
 
 ---
 
@@ -18,4 +24,4 @@ Added built-in retry logic for 429 (Too Many Requests) responses with exponentia
 
 | Category | Count |
 | -------- | ----- |
-| Features | 2     |
+| Features | 3     |

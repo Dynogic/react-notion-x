@@ -18,6 +18,10 @@ import { parsePageId } from './parse-page-id'
  * @param getPage - Function used to fetch a single page.
  * @param opts - Optional config
  */
+export interface PageSpaceLogger {
+  warn: (message: string, extra?: Record<string, unknown>) => void
+}
+
 export async function getAllPagesInSpace(
   rootPageId: string,
   rootSpaceId: string | undefined,
@@ -26,12 +30,14 @@ export async function getAllPagesInSpace(
     concurrency = 4,
     traverseCollections = true,
     targetPageId,
-    maxDepth = Number.POSITIVE_INFINITY
+    maxDepth = Number.POSITIVE_INFINITY,
+    logger
   }: {
     concurrency?: number
     traverseCollections?: boolean
     targetPageId?: string
     maxDepth?: number
+    logger?: PageSpaceLogger
   } = {}
 ): Promise<PageMap> {
   const pages: PageMap = {}
@@ -128,12 +134,12 @@ export async function getAllPagesInSpace(
 
           pages[pageId] = page
         } catch (err: any) {
-          console.warn(
-            'page load error',
-            { pageId, spaceId: rootSpaceId },
-            err.statusCode,
-            err.message
-          )
+          logger?.warn('page load error', {
+            pageId,
+            spaceId: rootSpaceId,
+            statusCode: err.statusCode,
+            error: err.message
+          })
           pages[pageId] = null
         }
 
