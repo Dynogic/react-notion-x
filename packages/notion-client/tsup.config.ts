@@ -10,5 +10,6 @@ export default defineConfig({
   sourcemap: true,
   minify: false,
   shims: false,
-  dts: true
+  dts: true,
+  external: ['undici']
 })

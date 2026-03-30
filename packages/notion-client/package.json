@@ -25,10 +25,11 @@
     "test:unit": "vitest run"
   },
   "dependencies": {
-    "ofetch": "catalog:",
     "notion-types": "workspace:*",
     "notion-utils": "workspace:*",
-    "p-map": "catalog:"
+    "ofetch": "catalog:",
+    "p-map": "catalog:",
+    "undici": "^7.24.6"
   },
   "publishConfig": {
     "access": "public",
