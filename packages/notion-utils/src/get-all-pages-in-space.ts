@@ -32,13 +32,15 @@ export async function getAllPagesInSpace(
     traverseCollections = true,
     targetPageId,
     maxDepth = Number.POSITIVE_INFINITY,
-    logger
+    logger,
+    onPageFetched
   }: {
     concurrency?: number
     traverseCollections?: boolean
     targetPageId?: string
     maxDepth?: number
     logger?: PageSpaceLogger
+    onPageFetched?: (pageId: string, pageCount: number) => void
   } = {}
 ): Promise<PageMap> {
   const pages: PageMap = {}
@@ -134,9 +136,9 @@ export async function getAllPagesInSpace(
           }
 
           pages[pageId] = page
-          logger?.debug?.(`Fetched page ${Object.keys(pages).length}`, {
-            pageId
-          })
+          const pageCount = Object.keys(pages).length
+          logger?.debug?.(`Fetched page ${pageCount}`, { pageId })
+          onPageFetched?.(pageId, pageCount)
         } catch (err: any) {
           logger?.warn('page load error', {
             pageId,
