@@ -870,47 +870,7 @@ export class NotionAPI {
       headers
     }
 
-    // When requestFn is provided, skip built-in retry — consumer handles it
-    if (this._requestFn) {
-      return this._requestFn(url, fetchOptions) as T
-    }
-
-    const MaxRetries = 3
-
-    for (let attempt = 0; attempt <= MaxRetries; attempt++) {
-      try {
-        return (await ofetch(url, fetchOptions)) as T
-      } catch (err: any) {
-        const status = err?.response?.status ?? err?.status ?? err?.statusCode
-        const isRetryable =
-          status === 429 || (status >= 500 && status < 600) || !status
-        if (isRetryable && attempt < MaxRetries) {
-          const backoffMs = 2000 * 2 ** attempt // 2s, 4s, 8s
-          this._logger?.warn(
-            status === 429
-              ? '429 rate-limited, retrying'
-              : 'Transient error, retrying',
-            {
-              endpoint,
-              status: status || 'no response',
-              error:
-                err?.cause?.cause?.message ||
-                err?.cause?.message ||
-                err?.message,
-              errorCode: err?.cause?.cause?.code || err?.cause?.code,
-              attempt: attempt + 1,
-              maxRetries: MaxRetries,
-              backoffMs
-            }
-          )
-          await new Promise((resolve) => setTimeout(resolve, backoffMs))
-          continue
-        }
-        throw err
-      }
-    }
-
-    // Should be unreachable, but satisfies TypeScript
-    throw new Error(`NotionAPI fetch failed after ${MaxRetries} retries`)
+    const fetchFn = this._requestFn || ofetch
+    return (await fetchFn(url, fetchOptions)) as T
   }
 }
