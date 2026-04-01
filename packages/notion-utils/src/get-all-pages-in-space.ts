@@ -46,6 +46,7 @@ export async function getAllPagesInSpace(
   const pages: PageMap = {}
   const pendingPageIds = new Set<string>()
   const queue = new PQueue({ concurrency })
+  let rootPageError: Error | null = null
 
   async function processPage(pageId: string, depth = 0) {
     if (depth > maxDepth) {
@@ -147,7 +148,8 @@ export async function getAllPagesInSpace(
             error: err.message
           })
           if (pageId === rootPageId) {
-            throw err
+            rootPageError = err
+            queue.clear()
           }
           pages[pageId] = null
         }
@@ -159,6 +161,10 @@ export async function getAllPagesInSpace(
 
   await processPage(rootPageId)
   await queue.onIdle()
+
+  if (rootPageError) {
+    throw rootPageError
+  }
 
   return pages
 }
