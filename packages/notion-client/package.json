@@ -28,8 +28,7 @@
     "notion-types": "workspace:*",
     "notion-utils": "workspace:*",
     "ofetch": "catalog:",
-    "p-map": "catalog:",
-    "undici": "^7.24.6"
+    "p-map": "catalog:"
   },
   "publishConfig": {
     "access": "public",

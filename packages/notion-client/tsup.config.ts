@@ -11,5 +11,5 @@ export default defineConfig({
   minify: false,
   shims: false,
   dts: true,
-  external: ['undici']
+  external: []
 })
