@@ -882,14 +882,22 @@ export class NotionAPI {
         return res
       } catch (err: any) {
         const status = err?.response?.status ?? err?.status ?? err?.statusCode
-        if (status === 429 && attempt < MaxRetries) {
+        const isRetryable =
+          status === 429 || (status >= 500 && status < 600) || !status
+        if (isRetryable && attempt < MaxRetries) {
           const backoffMs = 2000 * 2 ** attempt // 2s, 4s, 8s
-          this._logger?.warn('429 rate-limited, retrying', {
-            endpoint,
-            attempt: attempt + 1,
-            maxRetries: MaxRetries,
-            backoffMs
-          })
+          this._logger?.warn(
+            status === 429
+              ? '429 rate-limited, retrying'
+              : 'Transient error, retrying',
+            {
+              endpoint,
+              status: status || 'no response',
+              attempt: attempt + 1,
+              maxRetries: MaxRetries,
+              backoffMs
+            }
+          )
           await new Promise((resolve) => setTimeout(resolve, backoffMs))
           continue
         }

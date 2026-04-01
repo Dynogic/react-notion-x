@@ -146,6 +146,9 @@ export async function getAllPagesInSpace(
             statusCode: err.statusCode,
             error: err.message
           })
+          if (pageId === rootPageId) {
+            throw err
+          }
           pages[pageId] = null
         }
 
