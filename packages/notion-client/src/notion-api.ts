@@ -68,7 +68,7 @@ export class NotionAPI {
 
   private _resolveOfetchOptions(): OfetchOptions | undefined {
     if (this._getOfetchOptions) {
-      return { ...this._ofetchOptions, ...this._resolveOfetchOptions() }
+      return { ...this._ofetchOptions, ...this._getOfetchOptions() }
     }
     return this._ofetchOptions
   }
