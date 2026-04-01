@@ -879,9 +879,11 @@ export class NotionAPI {
             {
               endpoint,
               status: status || 'no response',
-              error: err?.message,
-              cause: err?.cause?.message,
-              causeCode: err?.cause?.code,
+              error:
+                err?.cause?.cause?.message ||
+                err?.cause?.message ||
+                err?.message,
+              errorCode: err?.cause?.cause?.code || err?.cause?.code,
               attempt: attempt + 1,
               maxRetries: MaxRetries,
               backoffMs
