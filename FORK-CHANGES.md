@@ -22,7 +22,7 @@ Added `onPageFetched(pageId, pageCount)` callback to `getAllPagesInSpace`. Calle
 
 **File:** `packages/notion-utils/src/get-all-pages-in-space.ts`
 
-Root page errors are re-thrown instead of swallowed. Sub-page errors still stored as `null`. Queue cleared on root page failure. Error thrown after `queue.onIdle()` for proper catch handling.
+Root page errors are re-thrown instead of silently stored as `null`. Sub-page errors are still swallowed gracefully. This lets the consumer distinguish "page not found" from "network error".
 
 ---
 
