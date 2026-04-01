@@ -861,20 +861,25 @@ export class NotionAPI {
 
     const url = `${apiBaseUrl}/${endpoint}`
 
+    const fetchOptions = {
+      method,
+      mode: 'no-cors' as const,
+      ...this._resolveOfetchOptions(),
+      ...ofetchOptions,
+      body,
+      headers
+    }
+
+    // When requestFn is provided, skip built-in retry — consumer handles it
+    if (this._requestFn) {
+      return this._requestFn(url, fetchOptions) as T
+    }
+
     const MaxRetries = 3
 
     for (let attempt = 0; attempt <= MaxRetries; attempt++) {
       try {
-        const fetchFn = this._requestFn || ofetch
-        const res = await fetchFn(url, {
-          method,
-          mode: 'no-cors',
-          ...this._resolveOfetchOptions(),
-          ...ofetchOptions,
-          body,
-          headers
-        })
-        return res
+        return (await ofetch(url, fetchOptions)) as T
       } catch (err: any) {
         const status = err?.response?.status ?? err?.status ?? err?.statusCode
         const isRetryable =
