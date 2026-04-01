@@ -26,6 +26,10 @@ export class NotionAPI {
   private readonly _userTimeZone: string
   private readonly _ofetchOptions?: OfetchOptions
   private readonly _getOfetchOptions?: () => OfetchOptions
+  private readonly _requestFn?: (
+    url: string,
+    options: OfetchOptions
+  ) => Promise<any>
   private readonly _logger?: NotionAPILogger
 
   /**
@@ -37,6 +41,7 @@ export class NotionAPI {
    * @param options.userTimeZone - The time zone for the Notion API. Defaults to `America/New_York`.
    * @param options.ofetchOptions - The HTTP options to use for the underlying `ofetch` requests. Defaults to undefined.
    * @param options.getOfetchOptions - Optional function called on each request, returning ofetch options. Enables per-request configuration like proxy rotation.
+   * @param options.requestFn - Optional function replacing ofetch for HTTP requests. Receives (url, options) and must return a promise. Enables custom pooling/queuing.
    * @param options.logger - Optional logger. When provided, retry events and other diagnostics are logged through it instead of being silent.
    */
   constructor({
@@ -46,6 +51,7 @@ export class NotionAPI {
     userTimeZone = 'America/New_York',
     ofetchOptions,
     getOfetchOptions,
+    requestFn,
     logger
   }: {
     apiBaseUrl?: string
@@ -55,6 +61,7 @@ export class NotionAPI {
     activeUser?: string
     ofetchOptions?: OfetchOptions
     getOfetchOptions?: () => OfetchOptions
+    requestFn?: (url: string, options: OfetchOptions) => Promise<any>
     logger?: NotionAPILogger
   } = {}) {
     this._apiBaseUrl = apiBaseUrl
@@ -64,6 +71,7 @@ export class NotionAPI {
     this._logger = logger
     this._ofetchOptions = ofetchOptions
     this._getOfetchOptions = getOfetchOptions
+    this._requestFn = requestFn
   }
 
   private _resolveOfetchOptions(): OfetchOptions | undefined {
@@ -857,7 +865,8 @@ export class NotionAPI {
 
     for (let attempt = 0; attempt <= MaxRetries; attempt++) {
       try {
-        const res = await ofetch(url, {
+        const fetchFn = this._requestFn || ofetch
+        const res = await fetchFn(url, {
           method,
           mode: 'no-cors',
           ...this._resolveOfetchOptions(),
