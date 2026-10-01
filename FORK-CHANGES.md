@@ -28,6 +28,17 @@ Added `onPageFetched(pageId, pageCount)` callback to `getAllPagesInSpace`. Calle
 
 Root page errors are re-thrown instead of silently stored as `null`. Sub-page errors are still swallowed gracefully. This lets the consumer distinguish "page not found" from "network error".
 
+## 5. Collection queries that come back empty
+
+**File:** `packages/notion-client/src/notion-api.ts`
+
+Upstream 7.10.1 (`833ef86`) started reading collection views correctly through `getBlockValue`. Before it, the view was read as the wrapper, so every query went out unfiltered and ungrouped. Reading the real view exposed two query shapes Notion rejects or answers with nothing:
+
+- **Valueless filters are dropped.** A filter the user added in Notion but never filled in is ignored by Notion's UI, but sent as-is it matches no rows (a filtered gallery came back with 0 of its 4 rows). `getCollectionData` now drops leaf filters with no `value`, except `is_empty` / `is_not_empty`, which take none by design.
+- **A rejected grouped query is retried ungrouped.** Notion answers some grouped queries with 400 "Invalid input" (a list grouped by a date by month). `getPage` retries such a view without its grouping (filters and sorts kept) and deletes `collection_group_by` from the view in the record map, so the renderer lists every row flat instead of drawing nothing. Boards are never flattened: a board is its grouping.
+
+Pinned in `src/fork-collection-query.test.ts`.
+
 ---
 
 ## Upstream sync log
@@ -35,6 +46,7 @@ Root page errors are re-thrown instead of silently stored as `null`. Sub-page er
 | Fork release | Upstream base | Notes |
 | ------------ | ------------- | ----- |
 | v7.10.0.1–.11 | 7.10.0 | Initial fork |
+| v8.0.8.2 | 8.0.8 (`03c5e88`) | §5: valueless filters dropped, rejected grouped queries retried ungrouped. |
 | v8.0.8.1 | 8.0.8 (`03c5e88`) | Merged upstream/master. Picks up the `app.notion.com` API host + default `User-Agent` (fixes Cloudflare 403s on `loadPageChunk`), image-URL hardening, rate-limit retry (bypassed under `requestFn`, see §1). Conflicts: `notion-api.ts` (retry vs `requestFn`, logger vs `console.warn`, options resolver), `tsdown.config.ts`, `.gitignore`. |
 
 ---
@@ -43,4 +55,4 @@ Root page errors are re-thrown instead of silently stored as `null`. Sub-page er
 
 | Category | Count |
 | -------- | ----- |
-| Features | 4     |
+| Features | 5     |

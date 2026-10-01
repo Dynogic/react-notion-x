@@ -17,6 +17,16 @@ import {
   getRetryDelay
 } from './retry'
 
+// Fork: a leaf filter whose value was never filled in (see getCollectionData).
+const ValuelessFilterOperators = new Set(['is_empty', 'is_not_empty'])
+const isIncompleteFilter = (filter: any): boolean =>
+  Boolean(
+    filter?.value &&
+    typeof filter.value === 'object' &&
+    !('value' in filter.value) &&
+    !ValuelessFilterOperators.has(filter.operator)
+  )
+
 const getNotionFileUrls = (
   value: unknown,
   urls = new Set<string>()
@@ -246,16 +256,17 @@ export class NotionAPI {
           )
 
           try {
-            const collectionData = await this.getCollectionData(
-              collectionId,
-              collectionViewId,
-              collectionView,
-              {
-                limit: collectionReducerLimit,
-                spaceId,
-                ofetchOptions
-              }
-            )
+            const { collectionData, ungrouped } =
+              await this._getCollectionDataOrUngrouped(
+                collectionId,
+                collectionViewId,
+                collectionView,
+                {
+                  limit: collectionReducerLimit,
+                  spaceId,
+                  ofetchOptions
+                }
+              )
 
             // await fs.writeFile(
             //   `${collectionId}-${collectionViewId}.json`,
@@ -285,6 +296,18 @@ export class NotionAPI {
             recordMap.collection_query![collectionId] = {
               ...recordMap.collection_query![collectionId],
               [collectionViewId]: (collectionData.result as any)?.reducerResults
+            }
+
+            // Fork: the rows came back ungrouped, so the view must render
+            // ungrouped — a grouped view reads only group results and would
+            // draw nothing. After the merge, which may have re-sent the view.
+            if (ungrouped) {
+              const mergedView: any = getBlockValue(
+                recordMap.collection_view[collectionViewId]
+              )
+              if (mergedView?.format) {
+                delete mergedView.format.collection_group_by
+              }
             }
           } catch (err: any) {
             // It's possible for public pages to link to private collections,
@@ -535,6 +558,54 @@ export class NotionAPI {
     })
   }
 
+  /**
+   * Fork: Notion rejects some of the grouped queries `getCollectionData`
+   * builds — a list grouped by a date (by month) or by a multi-select answers
+   * 400 "Invalid input" — and the view then comes back with no rows at all.
+   * Retry such a view ungrouped (filters and sorts kept), so every row still
+   * arrives; the caller drops the grouping from the view to match. Boards are
+   * left alone: a board IS its grouping.
+   */
+  private async _getCollectionDataOrUngrouped(
+    collectionId: string,
+    collectionViewId: string,
+    collectionView: any,
+    options: Parameters<NotionAPI['getCollectionData']>[3]
+  ) {
+    try {
+      const collectionData = await this.getCollectionData(
+        collectionId,
+        collectionViewId,
+        collectionView,
+        options
+      )
+      return { collectionData, ungrouped: false }
+    } catch (err: any) {
+      const groupBy =
+        collectionView?.type !== 'board' &&
+        collectionView?.format?.collection_group_by
+      if (!groupBy) throw err
+
+      this._logger?.warn(
+        'collectionQuery grouped query rejected, retrying ungrouped',
+        {
+          collectionId,
+          collectionViewId,
+          viewType: collectionView?.type,
+          error: err.message
+        }
+      )
+      const { collection_group_by: _groupBy, ...format } = collectionView.format
+      const collectionData = await this.getCollectionData(
+        collectionId,
+        collectionViewId,
+        { ...collectionView, format },
+        options
+      )
+      return { collectionData, ungrouped: true }
+    }
+  }
+
   public async getCollectionData(
     collectionId: string,
     collectionViewId: string,
@@ -580,6 +651,12 @@ export class NotionAPI {
     if (collectionView?.query2?.filter?.filters) {
       filters.push(...collectionView.query2.filter.filters)
     }
+
+    // Fork: a filter the user added in Notion but never gave a value is
+    // ignored by Notion's own UI, yet sent as-is it matches nothing and the
+    // view comes back empty. Drop it — except the operators that take no
+    // value by design.
+    filters = filters.filter((entry: any) => !isIncompleteFilter(entry?.filter))
 
     let loader: any = {
       type: 'reducer',
