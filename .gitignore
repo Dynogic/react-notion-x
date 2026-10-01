@@ -28,3 +28,4 @@ yarn-error.log*
 .turbo/
 .tsimp/
 packed/
+.pnpm-store

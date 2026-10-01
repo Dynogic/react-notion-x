@@ -64,13 +64,13 @@ export const useWindowSize = (
         off(globalThis.window, 'resize', handler)
       }
     }
-  }, [])
+  })
 
   return state
 }
 
 export const useEffectOnce = (effect: EffectCallback) => {
-  useEffect(effect, [])
+  useEffect(effect)
 }
 
 export const useUnmount = (fn: () => any): void => {
@@ -189,6 +189,7 @@ export const useLocalStorage = <T>(
       }
     },
 
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
     [key, setState]
   )
 
@@ -216,6 +217,7 @@ export const useClientStyle = (
 ) => {
   const [isMounted, setIsMounted] = useState(false)
   useEffect(() => {
+    // oxlint-disable-next-line react/set-state-in-effect
     setIsMounted(true)
   }, [])
 

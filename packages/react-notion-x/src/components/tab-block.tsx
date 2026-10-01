@@ -33,7 +33,7 @@ export function TabBlock(props: TabBlockProps) {
 
   React.useLayoutEffect(() => {
     updateTabScrollFades()
-  }, [tabIds, updateTabScrollFades])
+  }, [updateTabScrollFades])
 
   React.useEffect(() => {
     const el = tabScrollRef.current
@@ -49,7 +49,7 @@ export function TabBlock(props: TabBlockProps) {
       ro.disconnect()
       window.removeEventListener('resize', updateTabScrollFades)
     }
-  }, [tabIds, updateTabScrollFades])
+  }, [updateTabScrollFades])
 
   React.useEffect(() => {
     if (!tabIds.length) return

@@ -5,22 +5,22 @@ Guide for building this react-notion-x fork and publishing via GitHub Releases t
 ## Prerequisites
 
 - Node.js >= 20
-- pnpm 10.32.1+
+- pnpm — the version pinned in the root `package.json` `packageManager` field (Corepack fetches it)
 - GitHub CLI (`brew install gh`)
 
 ## Versioning Scheme
 
 The fork uses a 4-segment version: `v<upstream-version>.<fork-patch>`
 
-- Upstream `7.10.0` -> fork releases `v7.10.0.1`, `v7.10.0.2`, ...
-- When upstream bumps (e.g. `7.10.0` -> `7.11.0`), reset fork patch to `.1` -> `v7.11.0.1`
+- Upstream `8.0.8` -> fork releases `v8.0.8.1`, `v8.0.8.2`, ...
+- When upstream bumps (e.g. `8.0.8` -> `8.1.0`), reset fork patch to `.1` -> `v8.1.0.1`
 
 ## Packages We Fork
 
 Only these packages are modified and published:
 
-- `notion-client` — proxy support, retry/backoff on 429
-- `notion-utils` — (upstream sync only for now)
+- `notion-client` — `requestFn` transport hook, `getOfetchOptions`, optional logger (see `FORK-CHANGES.md`)
+- `notion-utils` — `getAllPagesInSpace` logger, `onPageFetched`, root-page error propagation
 
 The consuming project (`varig`) installs these from GitHub Releases.
 
@@ -64,14 +64,14 @@ gh release create "$NEXT" ./packed/*.tgz \
 
 ### Step 5: Update the consuming project
 
-Update `varig/server/import/package.json` and `varig/package.json` to point to the new release tarballs:
+Update `varig/server/media/package.json` and `varig/package.json` to point to the new release tarballs:
 
 ```json
-"notion-client": "https://github.com/Dynogic/react-notion-x/releases/download/v7.10.0.1/notion-client-7.10.0.tgz",
-"notion-utils": "https://github.com/Dynogic/react-notion-x/releases/download/v7.10.0.1/notion-utils-7.10.0.tgz"
+"notion-client": "https://github.com/Dynogic/react-notion-x/releases/download/v8.0.8.1/notion-client-8.0.8.tgz",
+"notion-utils": "https://github.com/Dynogic/react-notion-x/releases/download/v8.0.8.1/notion-utils-8.0.8.tgz"
 ```
 
-Then reinstall dependencies in both locations.
+Then reinstall dependencies in both locations. Keep varig's npm `react-notion-x` (the renderer, not forked) on the SAME upstream version, so it shares one `notion-utils`/`notion-types` copy with the fork.
 
 ## Other Operations
 
@@ -80,7 +80,8 @@ Then reinstall dependencies in both locations.
 ```bash
 git fetch upstream
 git merge upstream/master
-# Resolve conflicts, then follow the Release Workflow above
+# Resolve conflicts (keep every FORK-CHANGES.md entry intact), add a row to
+# FORK-CHANGES.md → Upstream sync log, then follow the Release Workflow above
 ```
 
 ### View releases

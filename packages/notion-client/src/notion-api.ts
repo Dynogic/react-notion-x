@@ -3,6 +3,7 @@ import {
   getBlockCollectionId,
   getBlockValue,
   getPageContentBlockIds,
+  getStableNotionFileSource,
   parsePageId,
   uuidToId
 } from 'notion-utils'
@@ -10,6 +11,41 @@ import { type FetchOptions as OfetchOptions, ofetch } from 'ofetch'
 import pMap from 'p-map'
 
 import type * as types from './types'
+import {
+  defaultMaxRetries,
+  defaultRetryStatusCodes,
+  getRetryDelay
+} from './retry'
+
+const getNotionFileUrls = (
+  value: unknown,
+  urls = new Set<string>()
+): Set<string> => {
+  if (typeof value === 'string') {
+    const notionFileUrl = getStableNotionFileSource(value)
+    if (notionFileUrl) {
+      urls.add(notionFileUrl)
+    }
+
+    return urls
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      getNotionFileUrls(item, urls)
+    }
+
+    return urls
+  }
+
+  if (value && typeof value === 'object') {
+    for (const item of Object.values(value)) {
+      getNotionFileUrls(item, urls)
+    }
+  }
+
+  return urls
+}
 
 /**
  * Main Notion API client.
@@ -35,7 +71,7 @@ export class NotionAPI {
   /**
    * Constructor for the NotionAPI class.
    * @param options - Configuration options.
-   * @param options.apiBaseUrl - The base URL of the Notion API. Defaults to `https://www.notion.so/api/v3`.
+   * @param options.apiBaseUrl - The base URL of the Notion API. Defaults to `https://app.notion.com/api/v3`.
    * @param options.authToken - The authentication token for the Notion API. Defaults to undefined.
    * @param options.activeUser - The active user for the Notion API. Defaults to undefined.
    * @param options.userTimeZone - The time zone for the Notion API. Defaults to `America/New_York`.
@@ -45,7 +81,7 @@ export class NotionAPI {
    * @param options.logger - Optional logger. When provided, retry events and other diagnostics are logged through it instead of being silent.
    */
   constructor({
-    apiBaseUrl = 'https://www.notion.so/api/v3',
+    apiBaseUrl = 'https://app.notion.com/api/v3',
     authToken,
     activeUser,
     userTimeZone = 'America/New_York',
@@ -205,8 +241,9 @@ export class NotionAPI {
         allCollectionInstances,
         async (collectionInstance) => {
           const { collectionId, collectionViewId, spaceId } = collectionInstance
-          const collectionView =
-            recordMap.collection_view[collectionViewId]?.value
+          const collectionView = getBlockValue(
+            recordMap.collection_view[collectionViewId]
+          )
 
           try {
             const collectionData = await this.getCollectionData(
@@ -271,17 +308,17 @@ export class NotionAPI {
       )
     }
 
+    if (fetchRelationPages) {
+      const newBlocks = await this.fetchRelationPages(recordMap, ofetchOptions)
+      recordMap.block = { ...recordMap.block, ...newBlocks }
+    }
+
     // Optionally fetch signed URLs for any embedded files.
     // NOTE: Similar to collection data, we default to eagerly fetching signed URL info
     // because it is preferable for many use cases as opposed to making these API calls
     // lazily from the client-side.
     if (signFileUrls) {
-      await this.addSignedUrls({ recordMap, contentBlockIds, ofetchOptions })
-    }
-
-    if (fetchRelationPages) {
-      const newBlocks = await this.fetchRelationPages(recordMap, ofetchOptions)
-      recordMap.block = { ...recordMap.block, ...newBlocks }
+      await this.addSignedUrls({ recordMap, ofetchOptions })
     }
 
     if (fetchCustomEmojis) {
@@ -407,47 +444,36 @@ export class NotionAPI {
     recordMap.signed_urls = {}
 
     if (!contentBlockIds) {
-      contentBlockIds = getPageContentBlockIds(recordMap)
+      // Include collection rows and other fetched blocks which aren't descendants
+      // of the root page but may still be rendered from this record map.
+      contentBlockIds = Object.keys(recordMap.block)
     }
 
     const allFileInstances = contentBlockIds.flatMap((blockId) => {
       const block = getBlockValue(recordMap.block[blockId])
 
-      if (
-        block &&
-        (block.type === 'pdf' ||
-          block.type === 'audio' ||
-          (block.type === 'image' && block.file_ids?.length) ||
-          block.type === 'video' ||
-          block.type === 'file' ||
-          block.type === 'page')
-      ) {
-        const source =
-          block.type === 'page'
-            ? block.format?.page_cover
-            : block.properties?.source?.[0]?.[0]
-        // console.log(block, source)
-
-        if (source) {
-          if (
-            source.includes('secure.notion-static.com') ||
-            source.includes('prod-files-secure') ||
-            source.includes('attachment:')
-          ) {
-            return {
-              permissionRecord: {
-                table: 'block',
-                id: block.id
-              },
-              url: source
-            }
-          }
-
-          return []
-        }
+      if (!block) {
+        return []
       }
 
-      return []
+      const primaryUrl =
+        block.type === 'page'
+          ? block.format?.page_cover
+          : block.properties?.source?.[0]?.[0]
+      const primaryNotionFileUrl = primaryUrl
+        ? getStableNotionFileSource(primaryUrl)
+        : undefined
+
+      return Array.from(
+        getNotionFileUrls([primaryUrl, block.format, block.properties])
+      ).map((url) => ({
+        permissionRecord: {
+          table: 'block',
+          id: block.id
+        },
+        url,
+        isPrimary: url === primaryNotionFileUrl
+      }))
     })
 
     if (allFileInstances.length > 0) {
@@ -457,14 +483,14 @@ export class NotionAPI {
           ofetchOptions
         )
 
-        if (signedUrls.length === allFileInstances.length) {
-          for (const [i, file] of allFileInstances.entries()) {
-            const signedUrl = signedUrls[i]
-            if (!signedUrl) continue
+        for (const [i, file] of allFileInstances.entries()) {
+          const signedUrl = signedUrls[i]
+          if (!signedUrl) continue
 
+          recordMap.signed_urls[file.url] = signedUrl
+
+          if (file.isPrimary) {
             const blockId = file.permissionRecord.id
-            if (!blockId) continue
-
             recordMap.signed_urls[blockId] = signedUrl
           }
         }
@@ -844,9 +870,14 @@ export class NotionAPI {
     ofetchOptions?: OfetchOptions
     headers?: any
   }): Promise<T> {
+    const resolvedOfetchOptions = this._resolveOfetchOptions()
     const headers: any = {
+      'User-Agent':
+        'notion-client (+https://github.com/NotionX/react-notion-x)',
       ...clientHeaders,
-      ...this._resolveOfetchOptions()?.headers,
+      // oxlint-disable-next-line typescript/no-misused-spread
+      ...resolvedOfetchOptions?.headers,
+      // oxlint-disable-next-line typescript/no-misused-spread
       ...ofetchOptions?.headers,
       'Content-Type': 'application/json'
     }
@@ -861,16 +892,37 @@ export class NotionAPI {
 
     const url = `${apiBaseUrl}/${endpoint}`
 
-    const fetchOptions = {
-      method,
-      mode: 'no-cors' as const,
-      ...this._resolveOfetchOptions(),
-      ...ofetchOptions,
-      body,
-      headers
+    // Fork: a consumer-supplied `requestFn` owns transport AND retry (its own
+    // pool, proxies and backoff), so it gets one zero-retry pass-through call.
+    if (this._requestFn) {
+      return (await this._requestFn(url, {
+        method,
+        mode: 'no-cors',
+        ...resolvedOfetchOptions,
+        ...ofetchOptions,
+        body,
+        headers
+      })) as T
     }
 
-    const fetchFn = this._requestFn || ofetch
-    return (await fetchFn(url, fetchOptions)) as T
+    // Notion rate-limits aggressively, and `ofetch` doesn't retry payload
+    // methods by default, so retry with exponential backoff unless the caller
+    // has opted out.
+    const retry =
+      ofetchOptions?.retry ?? resolvedOfetchOptions?.retry ?? defaultMaxRetries
+    const maxRetries = typeof retry === 'number' ? retry : defaultMaxRetries
+
+    const res = ofetch(url, {
+      method,
+      mode: 'no-cors',
+      retryStatusCodes: defaultRetryStatusCodes,
+      retryDelay: (context) => getRetryDelay(context, maxRetries),
+      ...resolvedOfetchOptions,
+      ...ofetchOptions,
+      body,
+      headers,
+      retry
+    })
+    return res
   }
 }
