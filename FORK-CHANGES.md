@@ -39,6 +39,14 @@ Upstream 7.10.1 (`833ef86`) started reading collection views correctly through `
 
 Pinned in `src/fork-collection-query.test.ts`.
 
+## 6. Crawl rows reachable only through grouped views and boards
+
+**File:** `packages/notion-utils/src/get-all-pages-in-space.ts`
+
+`getAllPagesInSpace` walked a collection's rows only from `collection_group_results.blockIds` (an ungrouped view) and a bare `blockIds`. A grouped view answers in `results:<type>:<value>` reducers and a board in its columns' results, so a row reachable only through one of them was never fetched — nor any page under it — and an offline copy of the workspace silently lacked it. `getCollectionRowIds` (exported) collects row ids from every reducer value, and every entry of a reducer's list, that carries `blockIds`; a row named by several reducers is crawled once.
+
+Pinned in `packages/notion-utils/src/get-all-pages-in-space.test.ts`.
+
 ---
 
 ## Upstream sync log
@@ -46,6 +54,7 @@ Pinned in `src/fork-collection-query.test.ts`.
 | Fork release | Upstream base | Notes |
 | ------------ | ------------- | ----- |
 | v7.10.0.1–.11 | 7.10.0 | Initial fork |
+| v8.0.8.3 | 8.0.8 (`03c5e88`) | §6: rows reachable only through grouped views and boards are crawled. |
 | v8.0.8.2 | 8.0.8 (`03c5e88`) | §5: valueless filters dropped, rejected grouped queries retried ungrouped. |
 | v8.0.8.1 | 8.0.8 (`03c5e88`) | Merged upstream/master. Picks up the `app.notion.com` API host + default `User-Agent` (fixes Cloudflare 403s on `loadPageChunk`), image-URL hardening, rate-limit retry (bypassed under `requestFn`, see §1). Conflicts: `notion-api.ts` (retry vs `requestFn`, logger vs `console.warn`, options resolver), `tsdown.config.ts`, `.gitignore`. |
 
@@ -55,4 +64,4 @@ Pinned in `src/fork-collection-query.test.ts`.
 
 | Category | Count |
 | -------- | ----- |
-| Features | 5     |
+| Features | 6     |

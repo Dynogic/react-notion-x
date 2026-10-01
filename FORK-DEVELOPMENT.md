@@ -20,7 +20,7 @@ The fork uses a 4-segment version: `v<upstream-version>.<fork-patch>`
 Only these packages are modified and published:
 
 - `notion-client` — `requestFn` transport hook, `getOfetchOptions`, optional logger (see `FORK-CHANGES.md`)
-- `notion-utils` — `getAllPagesInSpace` logger, `onPageFetched`, root-page error propagation
+- `notion-utils` — `getAllPagesInSpace` logger, `onPageFetched`, root-page error propagation, rows of grouped views and boards
 
 The consuming project (`varig`) installs these from GitHub Releases.
 

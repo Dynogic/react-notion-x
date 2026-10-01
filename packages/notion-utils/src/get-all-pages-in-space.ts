@@ -18,6 +18,40 @@ import { parsePageId } from './parse-page-id'
  * @param getPage - Function used to fetch a single page.
  * @param opts - Optional config
  */
+// Fork: how deep `getCollectionRowIds` looks into a view's reducer results.
+// The results object (1), a reducer (2), an entry of a reducer's list (3).
+const MaxReducerDepth = 3
+
+/**
+ * Fork: every row id a collection view's reducer results name. Upstream read
+ * only `collection_group_results.blockIds` (an ungrouped view) and a bare
+ * `blockIds`, so a row reachable only through a GROUPED view (its
+ * `results:<type>:<value>` reducers) or a BOARD (its columns' results) was
+ * never fetched, and neither were the pages under it. Any reducer value — or
+ * an entry of a reducer's list — that carries `blockIds` names rows.
+ */
+export function getCollectionRowIds(collectionData: unknown): string[] {
+  const ids = new Set<string>()
+  const visit = (value: unknown, depth: number) => {
+    if (!value || typeof value !== 'object' || depth > MaxReducerDepth) return
+    if (Array.isArray(value)) {
+      for (const entry of value) visit(entry, depth)
+      return
+    }
+    const blockIds = (value as { blockIds?: unknown }).blockIds
+    if (Array.isArray(blockIds)) {
+      for (const id of blockIds) {
+        if (typeof id === 'string' && id) ids.add(id)
+      }
+    }
+    for (const [key, child] of Object.entries(value)) {
+      if (key !== 'blockIds') visit(child, depth + 1)
+    }
+  }
+  visit(collectionData, 1)
+  return Array.from(ids)
+}
+
 export interface PageSpaceLogger {
   warn: (message: string, extra?: Record<string, unknown>) => void
   debug?: (message: string, extra?: Record<string, unknown>) => void
@@ -119,18 +153,10 @@ export async function getAllPagesInSpace(
               page.collection_query
             )) {
               for (const collectionData of Object.values(collectionViews)) {
-                const blockIds = Array.from(
-                  new Set([
-                    ...(collectionData?.collection_group_results?.blockIds ||
-                      []),
-                    ...(collectionData.blockIds || [])
-                  ])
-                )
-
-                if (blockIds.length) {
-                  for (const collectionItemId of blockIds) {
-                    void processPage(collectionItemId, depth + 1)
-                  }
+                for (const collectionItemId of getCollectionRowIds(
+                  collectionData
+                )) {
+                  void processPage(collectionItemId, depth + 1)
                 }
               }
             }
