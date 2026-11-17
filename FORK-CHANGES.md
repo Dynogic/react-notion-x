@@ -47,6 +47,14 @@ Pinned in `src/fork-collection-query.test.ts`.
 
 Pinned in `packages/notion-utils/src/get-all-pages-in-space.test.ts`.
 
+## 7. `followPage` filter on the walk
+
+**File:** `packages/notion-utils/src/get-all-pages-in-space.ts`
+
+Notion's record map for a page holds its ANCESTORS (and often its siblings) beside its own blocks, and upstream follows every `page` / `collection_view_page` block in it — so a walk started on one page climbs to its parent and walks the whole tree around it (one recipe row of a database imported all 197 recipes). `getAllPagesInSpace` takes an optional `followPage(pageId, ctx)`, asked before each candidate is queued, from both branches: the page-block scan (`via: 'block'`) and the collection-row scan (`via: 'collectionRow'`, with `collectionId`). `ctx` also carries `fromPageId`, the walked page's `recordMap` and its `depth`. `false` skips the candidate. Omitted, the walk is upstream's. The fork carries the hook only; the consumer decides what to follow (varig: descendants of the walked page).
+
+Pinned in `packages/notion-utils/src/get-all-pages-in-space.test.ts`.
+
 ---
 
 ## Upstream sync log
@@ -54,6 +62,7 @@ Pinned in `packages/notion-utils/src/get-all-pages-in-space.test.ts`.
 | Fork release | Upstream base | Notes |
 | ------------ | ------------- | ----- |
 | v7.10.0.1–.11 | 7.10.0 | Initial fork |
+| v8.0.8.4 | 8.0.8 (`03c5e88`) | §7: `followPage` filter on `getAllPagesInSpace`. |
 | v8.0.8.3 | 8.0.8 (`03c5e88`) | §6: rows reachable only through grouped views and boards are crawled. |
 | v8.0.8.2 | 8.0.8 (`03c5e88`) | §5: valueless filters dropped, rejected grouped queries retried ungrouped. |
 | v8.0.8.1 | 8.0.8 (`03c5e88`) | Merged upstream/master. Picks up the `app.notion.com` API host + default `User-Agent` (fixes Cloudflare 403s on `loadPageChunk`), image-URL hardening, rate-limit retry (bypassed under `requestFn`, see §1). Conflicts: `notion-api.ts` (retry vs `requestFn`, logger vs `console.warn`, options resolver), `tsdown.config.ts`, `.gitignore`. |
@@ -64,4 +73,4 @@ Pinned in `packages/notion-utils/src/get-all-pages-in-space.test.ts`.
 
 | Category | Count |
 | -------- | ----- |
-| Features | 6     |
+| Features | 7     |

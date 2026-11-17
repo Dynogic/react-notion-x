@@ -3,6 +3,7 @@
 import { expect, test } from 'vitest'
 
 import {
+  type FollowPageContext,
   getAllPagesInSpace,
   getCollectionRowIds
 } from './get-all-pages-in-space'
@@ -105,4 +106,89 @@ test('getCollectionRowIds: ignores what is not a row id, and an empty or missing
   expect(
     getCollectionRowIds({ 'results:x': { blockIds: ['a', 7, null, '', 'b'] } })
   ).toEqual(['a', 'b'])
+})
+
+// Fork: `followPage` (FORK-CHANGES.md #7).
+const Child = '33333333-3333-4333-8333-333333333331'
+const Sibling = '33333333-3333-4333-8333-333333333332'
+
+const rootWithBlocksAndRows = () => ({
+  block: {
+    [Root]: block(Root, { type: 'page' }),
+    [Child]: block(Child, { type: 'page' }),
+    [Sibling]: block(Sibling, { type: 'page' })
+  },
+  collection_query: {
+    'collection-1': {
+      'view-1': {
+        collection_group_results: { blockIds: [rowId(1), rowId(2)] }
+      }
+    }
+  }
+})
+
+async function crawlWith(
+  followPage?: (pageId: string, ctx: FollowPageContext) => boolean
+) {
+  const fetched: string[] = []
+  await getAllPagesInSpace(
+    Root,
+    undefined,
+    async (pageId) => {
+      fetched.push(pageId)
+      if (pageId === Root) return rootWithBlocksAndRows() as any
+      return {
+        block: { [pageId]: block(pageId, { type: 'page' }) },
+        collection_query: {}
+      } as any
+    },
+    followPage ? { followPage } : {}
+  )
+  return fetched.sort()
+}
+
+test('followPage: omitted, every page block and row is followed (unchanged)', async () => {
+  expect(await crawlWith()).toEqual(
+    [Root, Child, Sibling, rowId(1), rowId(2)].sort()
+  )
+})
+
+test('followPage: filters both the page-block scan and the collection rows', async () => {
+  const calls: Array<{
+    id: string
+    via: string
+    from: string
+    depth: number
+    collectionId?: string
+  }> = []
+  const fetched = await crawlWith((id, ctx) => {
+    calls.push({
+      id,
+      via: ctx.via,
+      from: ctx.fromPageId,
+      depth: ctx.depth,
+      collectionId: ctx.collectionId
+    })
+    expect(ctx.recordMap.block[ctx.fromPageId]).toBeTruthy()
+    return id !== Sibling && id !== rowId(2)
+  })
+  expect(fetched).toEqual([Root, Child, rowId(1)].sort())
+  expect(calls).toContainEqual({
+    id: Sibling,
+    via: 'block',
+    from: Root,
+    depth: 0,
+    collectionId: undefined
+  })
+  expect(calls).toContainEqual({
+    id: rowId(2),
+    via: 'collectionRow',
+    from: Root,
+    depth: 0,
+    collectionId: 'collection-1'
+  })
+})
+
+test('followPage: returning false for everything keeps only the root', async () => {
+  expect(await crawlWith(() => false)).toEqual([Root])
 })

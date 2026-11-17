@@ -57,6 +57,21 @@ export interface PageSpaceLogger {
   debug?: (message: string, extra?: Record<string, unknown>) => void
 }
 
+/**
+ * Fork: where a candidate page was found while walking `fromPageId`.
+ * `via: 'block'` is a page / collection_view_page block in the walked page's
+ * record map; `via: 'collectionRow'` is a row of one of its collection
+ * queries (`collectionId` names the collection). `depth` is the walked
+ * page's depth (the root is 0).
+ */
+export interface FollowPageContext {
+  fromPageId: string
+  recordMap: ExtendedRecordMap
+  via: 'block' | 'collectionRow'
+  depth: number
+  collectionId?: string
+}
+
 export async function getAllPagesInSpace(
   rootPageId: string,
   rootSpaceId: string | undefined,
@@ -67,7 +82,8 @@ export async function getAllPagesInSpace(
     targetPageId,
     maxDepth = Number.POSITIVE_INFINITY,
     logger,
-    onPageFetched
+    onPageFetched,
+    followPage
   }: {
     concurrency?: number
     traverseCollections?: boolean
@@ -75,6 +91,13 @@ export async function getAllPagesInSpace(
     maxDepth?: number
     logger?: PageSpaceLogger
     onPageFetched?: (pageId: string, pageCount: number) => void
+    /**
+     * Fork: asked before each candidate page is queued; `false` skips it.
+     * Notion's record map for a page also holds its ancestors (and often
+     * its siblings), so without a filter the walk climbs out of the page it
+     * started from. Omitted, every candidate is followed (upstream).
+     */
+    followPage?: (pageId: string, ctx: FollowPageContext) => boolean
   } = {}
 ): Promise<PageMap> {
   const pages: PageMap = {}
@@ -142,6 +165,18 @@ export async function getAllPagesInSpace(
               return false
             }
 
+            if (
+              followPage &&
+              !followPage(key, {
+                fromPageId: pageId,
+                recordMap: page,
+                via: 'block',
+                depth
+              })
+            ) {
+              return false
+            }
+
             return true
           })) {
             void processPage(subPageId, depth + 1)
@@ -149,13 +184,25 @@ export async function getAllPagesInSpace(
 
           // traverse collection item pages as they may contain subpages as well
           if (traverseCollections) {
-            for (const collectionViews of Object.values(
+            for (const [collectionId, collectionViews] of Object.entries(
               page.collection_query
             )) {
               for (const collectionData of Object.values(collectionViews)) {
                 for (const collectionItemId of getCollectionRowIds(
                   collectionData
                 )) {
+                  if (
+                    followPage &&
+                    !followPage(collectionItemId, {
+                      fromPageId: pageId,
+                      recordMap: page,
+                      via: 'collectionRow',
+                      depth,
+                      collectionId
+                    })
+                  ) {
+                    continue
+                  }
                   void processPage(collectionItemId, depth + 1)
                 }
               }
